@@ -12,7 +12,6 @@ import org.springframework.web.client.RestTemplate;
 
 @Service
 public class TransactionService {
-
     private static final Logger logger = LoggerFactory.getLogger(TransactionService.class);
 
     private final UserRepository userRepository;

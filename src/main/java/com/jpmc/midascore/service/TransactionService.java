@@ -1,7 +1,10 @@
 package com.jpmc.midascore.service;
 
+import com.jpmc.midascore.dto.Incentive;
+import com.jpmc.midascore.entity.TransactionRecord;
 import com.jpmc.midascore.entity.UserRecord;
 import com.jpmc.midascore.foundation.Transaction;
+import com.jpmc.midascore.repository.TransactionRepository;
 import com.jpmc.midascore.repository.UserRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -16,11 +19,13 @@ public class TransactionService {
 
     private final UserRepository userRepository;
     private final RestTemplate restTemplate;
+    private final TransactionRepository transactionRepository;
 
     @Autowired
-    public TransactionService(UserRepository userRepository) {
+    public TransactionService(UserRepository userRepository, TransactionRepository transactionRepository) {
         this.userRepository = userRepository;
         this.restTemplate = new RestTemplate();
+        this.transactionRepository = transactionRepository;
     }
 
     @Transactional
@@ -29,30 +34,39 @@ public class TransactionService {
         long recipientId = transaction.getRecipientId();
         String senderName = userRepository.getNameById(senderId).getName();
         String recipientName = userRepository.getNameById(recipientId).getName();
-        float senderBalance = userRepository.getBalanceById(senderId).getBalance();
-        float recipientBalance = userRepository.getBalanceById(recipientId).getBalance();
         float amount = transaction.getAmount();
 
         logger.info("Processing transaction: {}", transaction);
 
-        ValidateTransaction(transaction);
+        boolean isValid =  validateTransaction(transaction);
+        if  (isValid) {
+            float incentiveAmount = getIncentiveFromAPI(transaction);
+            UserRecord sender = userRepository.findById(senderId);
+            UserRecord recipient = userRepository.findById(recipientId);
 
-        UserRecord sender = userRepository.findById(senderId);
-        UserRecord recipient = userRepository.findById(recipientId);
+            sender.setBalance(sender.getBalance() - amount);
+            recipient.setBalance(recipient.getBalance() + amount + incentiveAmount);
 
-        sender.setBalance(senderBalance - amount);
-        userRepository.save(sender);
-        logger.info("Sender Name: {}", senderName);
+            TransactionRecord record = TransactionRecord.fromTransaction(transaction, sender, recipient, isValid, incentiveAmount);
+            transactionRepository.save(record);
 
-        recipient.setBalance(recipientBalance + amount);
-        userRepository.save(recipient);
-        logger.info("Recipient Name: {}", recipientName);
+            userRepository.save(recipient);
+            userRepository.save(sender);
 
-        logger.info("Recipient Balance: {}", recipientBalance);
-        logger.info("Transaction sent: {}", transaction);
+            logger.info("Sender Name: {}", senderName);
+            logger.info("Sender Balance: {}", sender.getBalance());
+            logger.info("Recipient Name: {}", recipientName);
+            logger.info("Recipient Balance: {}", recipient.getBalance());
+            logger.info("Transaction sent: {}", transaction);
+        }
+        else {
+            logger.info("Transaction is invalid: {}", transaction);
+        }
+
+
     }
 
-    public boolean ValidateTransaction(Transaction transaction) {
+    public boolean validateTransaction(Transaction transaction) {
         long recipientId = transaction.getRecipientId();
         long senderId = transaction.getSenderId();
         float amount = transaction.getAmount();
@@ -68,12 +82,30 @@ public class TransactionService {
             return false;
         }
 
-        if (amount < 0 && amount >= senderBalance) {
+        if (amount <= 0 || amount > senderBalance) {
             logger.info("Amount not enough. Transaction: {}", transaction);
             return false;
         }
 
         return true;
+    }
+
+    private float getIncentiveFromAPI(Transaction transaction) {
+        try {
+            String url = "http://localhost:8080/incentive";
+            Incentive response = restTemplate.postForObject(url, transaction, Incentive.class);
+
+            if (response != null) {
+                logger.info("Incentive API response: {}", response);
+                return response.getAmount();
+            } else {
+                logger.warn("Incentive API returned null response");
+                return 0.0f;
+            }
+        } catch (Exception e) {
+            logger.error("Error calling Incentive API: {}", e.getMessage());
+            return 0.0f;
+        }
     }
 
 

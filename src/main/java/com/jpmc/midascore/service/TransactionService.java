@@ -3,6 +3,7 @@ package com.jpmc.midascore.service;
 import com.jpmc.midascore.dto.Incentive;
 import com.jpmc.midascore.entity.TransactionRecord;
 import com.jpmc.midascore.entity.UserRecord;
+import com.jpmc.midascore.foundation.Balance;
 import com.jpmc.midascore.foundation.Transaction;
 import com.jpmc.midascore.repository.TransactionRepository;
 import com.jpmc.midascore.repository.UserRepository;
@@ -106,6 +107,14 @@ public class TransactionService {
             logger.error("Error calling Incentive API: {}", e.getMessage());
             return 0.0f;
         }
+    }
+
+    public boolean existsById (long id) {
+        return transactionRepository.existsById(id);
+    }
+
+    public Balance getBalanceById (long id) {
+        return userRepository.getBalanceObjectById(id);
     }
 
 
